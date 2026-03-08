@@ -20,9 +20,11 @@ GUPY_JOBS_PER_QUERY = 20
 MAX_DESCRIPTION_CHARS = 800
 SCORE_MAX_TOKENS = 200
 GUPY_SEARCH_QUERIES = [
-    "estágio cibersegurança", "estágio segurança", "estágio devops",
+    "estágio cibersegurança", "estágio segurança da informação", "estágio devops",
     "estágio python", "estágio infraestrutura", "estágio cloud",
-    "estágio desenvolvimento", "estágio dados", "estágio TI",
+    "estágio backend", "estágio dados", "estágio TI remoto",
+    "estágio linux", "estágio docker", "estágio automação",
+    "estágio campinas", "estágio hortolândia",
 ]
 
 # ─── LLM Client (GitHub Models API) ───────────────────────────────────────────
