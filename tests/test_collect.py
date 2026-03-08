@@ -160,7 +160,7 @@ def test_collect_jobspy_returns_normalized_list():
     with patch("collect.scrape_jobs", return_value=make_mock_jobspy_df(rows), create=True):
         result = collect.collect_jobspy(["estagio python"])
     assert len(result) == 2
-    required_keys = {"title", "company", "city", "modality", "description", "url", "source"}
+    required_keys = {"title", "company", "city", "modality", "description", "url", "platform"}
     assert required_keys.issubset(result[0].keys())
     assert required_keys.issubset(result[1].keys())
 
@@ -191,7 +191,7 @@ def test_collect_and_score_deduplicates_across_sources(mock_mcp):
                 "platform": "gupy"}
     jobspy_job = {"url": shared_url, "title": "Dev", "company": "Co",
                   "city": "SP", "modality": "remoto", "description": "Python",
-                  "source": "linkedin"}
+                  "platform": "linkedin"}
     with patch("collect.collect_gupy", return_value=[gupy_job]):
         with patch("collect.collect_jobspy", return_value=[jobspy_job], create=True):
             with patch("collect.score_job", return_value={

@@ -198,7 +198,7 @@ def collect_jobspy(queries: list[str]) -> list[dict]:
                     "modality": "remoto" if row.get("is_remote") else "on-site",
                     "description": str(row.get("description", ""))[:MAX_DESCRIPTION_CHARS],
                     "url": url,
-                    "source": str(row.get("site", "jobspy")),
+                    "platform": str(row.get("site", "jobspy")),
                 })
         except Exception as e:
             print(f"[WARN] JobSpy query {query!r}: {e}")
