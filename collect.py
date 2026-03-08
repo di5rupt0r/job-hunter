@@ -94,7 +94,7 @@ def _extract_company(job_data: dict) -> str:
 
 def score_job(
     title: str, company: str, city: str, modality: str,
-    description: str, policy_md: str
+    description: str, policy_md: str, profile_md: str = ""
 ) -> dict:
     prompt_match = re.search(r"## Prompt de Triagem.*?```\n(.*?)```", policy_md, re.DOTALL)
     if prompt_match:
@@ -104,6 +104,7 @@ def score_job(
 
     user_content = (
         scoring_prompt
+        .replace("{perfil}", profile_md)
         .replace("{titulo}", title)
         .replace("{empresa}", company)
         .replace("{cidade}", city)
@@ -162,7 +163,7 @@ def collect_gupy() -> list[dict]:
 
 def collect_and_score() -> list[dict]:
     """Coleta vagas da Gupy, faz scoring e retorna vagas com score >= threshold."""
-    _, policy_md = load_profile_and_policy()
+    profile_md, policy_md = load_profile_and_policy()
 
     threshold_match = re.search(r"score_minimo_candidatura:\s*(\d+)", policy_md)
     threshold = int(threshold_match.group(1)) if threshold_match else 60
@@ -185,6 +186,7 @@ def collect_and_score() -> list[dict]:
             modality=job.get("modality", ""),
             description=job.get("description", ""),
             policy_md=policy_md,
+            profile_md=profile_md,
         )
         if result.get("descarte"):
             continue
