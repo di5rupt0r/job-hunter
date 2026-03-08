@@ -27,6 +27,11 @@ GUPY_SEARCH_QUERIES = [
     "estágio linux", "estágio docker", "estágio automação",
     "estágio campinas", "estágio hortolândia",
 ]
+# Subset usada pelo JobSpy — portais internacionais são mais lentos, queries reduzidas
+JOBSPY_SEARCH_QUERIES = [
+    "software engineering intern", "cybersecurity intern", "devops intern",
+    "backend intern campinas", "python intern brazil",
+]
 
 # ─── LLM Client (GitHub Models API) ───────────────────────────────────────────
 llm_client = OpenAI(
@@ -166,17 +171,17 @@ def collect_gupy() -> list[dict]:
 
 
 def collect_jobspy(queries: list[str]) -> list[dict]:
-    """Coleta vagas via python-jobspy (LinkedIn, Indeed, Glassdoor, Google)."""
+    """Coleta vagas via python-jobspy (LinkedIn e Indeed — Glassdoor/Google não suportam BR)."""
     jobs = []
     seen: set[str] = set()
     for query in queries:
         try:
             results = scrape_jobs(
-                site_name=["linkedin", "indeed", "glassdoor", "google"],
+                site_name=["linkedin", "indeed"],
                 search_term=query,
                 location="Campinas, SP, Brasil",
                 job_type="internship",
-                results_wanted=20,
+                results_wanted=5,
                 hours_old=48,
                 country_indeed="Brazil",
                 verbose=0,
@@ -206,7 +211,7 @@ def collect_and_score() -> list[dict]:
     threshold_match = re.search(r"score_minimo_candidatura:\s*(\d+)", policy_md)
     threshold = int(threshold_match.group(1)) if threshold_match else 60
 
-    raw_jobs = collect_gupy() + collect_jobspy(GUPY_SEARCH_QUERIES)
+    raw_jobs = collect_gupy() + collect_jobspy(JOBSPY_SEARCH_QUERIES)
     seen_urls = set()
     deduped = []
     for j in raw_jobs:
