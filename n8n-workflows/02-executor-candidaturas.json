@@ -1,0 +1,242 @@
+{
+  "name": "02 - Executor de Candidaturas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 */3 * * *" }] },
+        "timezone": "America/Sao_Paulo"
+      },
+      "name": "Schedule - a cada 3h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.trello.com/1/lists/{{ $env.TRELLO_LIST_TRIAGEM }}/cards",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "fields", "value": "id,name,desc" }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "name": "Buscar Cards Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $json.length }}", "operation": "largerEqual", "value2": 1 }]
+        }
+      },
+      "name": "Tem cards?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cards = $input.all()[0].json;\nconst card = Array.isArray(cards) ? cards[0] : cards;\nconst desc = card.desc || '';\nconst urlMatch = desc.match(/🔗 URL: (.+)/);\nconst platformMatch = desc.match(/🏭 Plataforma: (.+)/);\nconst nameParts = card.name.replace(/\\[\\d+\\] /, '').split(' — ');\nreturn [{ json: {\n  cardId: card.id,\n  url: urlMatch ? urlMatch[1].trim() : '',\n  title: nameParts[0] || card.name,\n  company: nameParts[1] || 'Desconhecida',\n  platform: platformMatch ? platformMatch[1].trim() : ''\n}}];"
+      },
+      "name": "Extrair dados do card",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $json.cardId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_CANDIDATANDO }}" }
+          ]
+        }
+      },
+      "name": "Mover para Candidatando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/apply",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\"url\": \"{{ $('Extrair dados do card').item.json.url }}\", \"title\": \"{{ $('Extrair dados do card').item.json.title }}\", \"company\": \"{{ $('Extrair dados do card').item.json.company }}\", \"trello_card_id\": \"{{ $('Extrair dados do card').item.json.cardId }}\"}",
+        "options": { "timeout": 300000 },
+        "responseFormat": "json"
+      },
+      "name": "Executar Candidatura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 200]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "result",
+        "rules": {
+          "rules": [
+            { "value": "SUCCESS", "outputKey": "success" },
+            { "value": "CAPTCHA_DETECTED", "outputKey": "captcha" }
+          ]
+        },
+        "fallbackOutput": "error"
+      },
+      "name": "Rotear resultado",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1750, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $('Extrair dados do card').item.json.cardId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_AGUARDANDO }}" }
+          ]
+        }
+      },
+      "name": "SUCCESS: Mover para Aguardando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.new_status }}", "operation": "equal", "value2": "blocked" }]
+        }
+      },
+      "name": "CAPTCHA: Bloqueado definitivo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2000, 250]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $('Extrair dados do card').item.json.cardId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_BLOQUEADA }}" }
+          ]
+        }
+      },
+      "name": "Mover para Bloqueada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=⛔ VAGA BLOQUEADA (3 tentativas)\n{{ $('Extrair dados do card').item.json.title }} — {{ $('Extrair dados do card').item.json.company }}\n{{ $('Extrair dados do card').item.json.url }}"
+      },
+      "name": "Telegram: Bloqueada",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2500, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $('Extrair dados do card').item.json.cardId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_COLETADA }}" }
+          ]
+        }
+      },
+      "name": "CAPTCHA: Volta para Coletada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 350]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=⚠️ CAPTCHA em {{ $('Extrair dados do card').item.json.company }}\nRetry {{ $json.retry_count }}/3 agendado para +4h\n{{ $('Extrair dados do card').item.json.url }}"
+      },
+      "name": "Telegram: CAPTCHA retry",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2500, 350]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $('Extrair dados do card').item.json.cardId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_COLETADA }}" }
+          ]
+        }
+      },
+      "name": "ERROR: Volta para Coletada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 450]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=❌ Erro ao candidatar: {{ $('Extrair dados do card').item.json.company }}\n{{ $json.detail }}\n{{ $('Extrair dados do card').item.json.url }}"
+      },
+      "name": "Telegram: Erro",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2250, 450]
+    }
+  ],
+  "connections": {
+    "Schedule - a cada 3h": { "main": [[{ "node": "Buscar Cards Triagem", "type": "main", "index": 0 }]] },
+    "Buscar Cards Triagem": { "main": [[{ "node": "Tem cards?", "type": "main", "index": 0 }]] },
+    "Tem cards?": { "main": [[{ "node": "Extrair dados do card", "type": "main", "index": 0 }]] },
+    "Extrair dados do card": { "main": [[{ "node": "Mover para Candidatando", "type": "main", "index": 0 }]] },
+    "Mover para Candidatando": { "main": [[{ "node": "Executar Candidatura", "type": "main", "index": 0 }]] },
+    "Executar Candidatura": { "main": [[{ "node": "Rotear resultado", "type": "main", "index": 0 }]] },
+    "Rotear resultado": {
+      "main": [
+        [{ "node": "SUCCESS: Mover para Aguardando", "type": "main", "index": 0 }],
+        [{ "node": "CAPTCHA: Bloqueado definitivo?", "type": "main", "index": 0 }],
+        [{ "node": "ERROR: Volta para Coletada", "type": "main", "index": 0 }]
+      ]
+    },
+    "CAPTCHA: Bloqueado definitivo?": {
+      "main": [
+        [{ "node": "Mover para Bloqueada", "type": "main", "index": 0 }],
+        [{ "node": "CAPTCHA: Volta para Coletada", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mover para Bloqueada": { "main": [[{ "node": "Telegram: Bloqueada", "type": "main", "index": 0 }]] },
+    "CAPTCHA: Volta para Coletada": { "main": [[{ "node": "Telegram: CAPTCHA retry", "type": "main", "index": 0 }]] },
+    "ERROR: Volta para Coletada": { "main": [[{ "node": "Telegram: Erro", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "timezone": "America/Sao_Paulo" }
+}

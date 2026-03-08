@@ -1,0 +1,89 @@
+{
+  "name": "04 - Monitor SLA (Sem Resposta)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 9 * * *" }] },
+        "timezone": "America/Sao_Paulo"
+      },
+      "name": "Schedule - diario 09h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.trello.com/1/lists/{{ $env.TRELLO_LIST_AGUARDANDO }}/cards",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "fields", "value": "id,name,dateLastActivity" }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "name": "Buscar cards Aguardando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cards = $input.all()[0].json;\nconst seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);\nconst velhos = (Array.isArray(cards) ? cards : [cards]).filter(c => new Date(c.dateLastActivity) < seteDiasAtras);\nreturn velhos.map(c => ({ json: c }));"
+      },
+      "name": "Filtrar > 7 dias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $input.all().length }}", "operation": "largerEqual", "value2": 1 }]
+        }
+      },
+      "name": "Tem velhos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "name": "Iterar velhos",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $json.id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_RECUSADA }}" }
+          ]
+        }
+      },
+      "name": "Mover para Recusada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 200]
+    }
+  ],
+  "connections": {
+    "Schedule - diario 09h": { "main": [[{ "node": "Buscar cards Aguardando", "type": "main", "index": 0 }]] },
+    "Buscar cards Aguardando": { "main": [[{ "node": "Filtrar > 7 dias", "type": "main", "index": 0 }]] },
+    "Filtrar > 7 dias": { "main": [[{ "node": "Tem velhos?", "type": "main", "index": 0 }]] },
+    "Tem velhos?": { "main": [[{ "node": "Iterar velhos", "type": "main", "index": 0 }]] },
+    "Iterar velhos": { "main": [[{ "node": "Mover para Recusada", "type": "main", "index": 0 }]] },
+    "Mover para Recusada": { "main": [[{ "node": "Iterar velhos", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "timezone": "America/Sao_Paulo" }
+}

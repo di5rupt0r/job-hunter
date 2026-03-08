@@ -1,0 +1,74 @@
+{
+  "name": "03 - Retry CAPTCHA",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 */4 * * *" }] },
+        "timezone": "America/Sao_Paulo"
+      },
+      "name": "Schedule - a cada 4h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:8000/pending-retry",
+        "responseFormat": "json"
+      },
+      "name": "Buscar pendentes retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $json.jobs.length }}", "operation": "largerEqual", "value2": 1 }]
+        }
+      },
+      "name": "Tem pendentes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Iterar pendentes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $json.trello_card_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_TRIAGEM }}" }
+          ]
+        }
+      },
+      "name": "Recolocar na Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 200]
+    }
+  ],
+  "connections": {
+    "Schedule - a cada 4h": { "main": [[{ "node": "Buscar pendentes retry", "type": "main", "index": 0 }]] },
+    "Buscar pendentes retry": { "main": [[{ "node": "Tem pendentes?", "type": "main", "index": 0 }]] },
+    "Tem pendentes?": { "main": [[{ "node": "Iterar pendentes", "type": "main", "index": 0 }]] },
+    "Iterar pendentes": { "main": [[{ "node": "Recolocar na Triagem", "type": "main", "index": 0 }]] },
+    "Recolocar na Triagem": { "main": [[{ "node": "Iterar pendentes", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "timezone": "America/Sao_Paulo" }
+}

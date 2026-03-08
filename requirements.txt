@@ -1,0 +1,13 @@
+browser-use==0.1.40
+playwright
+langchain-openai
+python-dotenv
+fastapi
+uvicorn[standard]
+httpx
+# Testes
+pytest
+pytest-asyncio
+pytest-mock
+pytest-cov
+respx

@@ -1,0 +1,100 @@
+{
+  "name": "05 - Watchdog Cards Presos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 * * * *" }] },
+        "timezone": "America/Sao_Paulo"
+      },
+      "name": "Schedule - hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.trello.com/1/lists/{{ $env.TRELLO_LIST_CANDIDATANDO }}/cards",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "fields", "value": "id,name,dateLastActivity" }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "name": "Buscar cards Candidatando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cards = $input.all()[0].json;\nconst limite = new Date(Date.now() - 30 * 60 * 1000);\nconst presos = (Array.isArray(cards) ? cards : [cards]).filter(c => new Date(c.dateLastActivity) < limite);\nreturn presos.map(c => ({ json: c }));"
+      },
+      "name": "Filtrar stuck (> 30min)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $input.all().length }}", "operation": "largerEqual", "value2": 1 }]
+        }
+      },
+      "name": "Tem presos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "name": "Iterar presos",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $json.id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{ $env.TRELLO_API_KEY }}" },
+            { "name": "token", "value": "={{ $env.TRELLO_TOKEN }}" },
+            { "name": "idList", "value": "={{ $env.TRELLO_LIST_TRIAGEM }}" }
+          ]
+        }
+      },
+      "name": "Devolver para Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=⚠️ Card preso detectado: {{ $json.name }}\nDevolvido para Triagem OK automaticamente."
+      },
+      "name": "Telegram: Card preso",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1750, 200]
+    }
+  ],
+  "connections": {
+    "Schedule - hourly": { "main": [[{ "node": "Buscar cards Candidatando", "type": "main", "index": 0 }]] },
+    "Buscar cards Candidatando": { "main": [[{ "node": "Filtrar stuck (> 30min)", "type": "main", "index": 0 }]] },
+    "Filtrar stuck (> 30min)": { "main": [[{ "node": "Tem presos?", "type": "main", "index": 0 }]] },
+    "Tem presos?": { "main": [[{ "node": "Iterar presos", "type": "main", "index": 0 }]] },
+    "Iterar presos": { "main": [[{ "node": "Devolver para Triagem", "type": "main", "index": 0 }]] },
+    "Devolver para Triagem": { "main": [[{ "node": "Telegram: Card preso", "type": "main", "index": 0 }]] },
+    "Telegram: Card preso": { "main": [[{ "node": "Iterar presos", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "timezone": "America/Sao_Paulo" }
+}

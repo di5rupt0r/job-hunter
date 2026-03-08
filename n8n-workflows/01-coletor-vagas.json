@@ -1,0 +1,86 @@
+{
+  "name": "01 - Coletor de Vagas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 8,20 * * *" }
+          ]
+        },
+        "timezone": "America/Sao_Paulo"
+      },
+      "name": "Schedule - 2x por dia",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/collect",
+        "options": { "timeout": 120000 },
+        "responseFormat": "json"
+      },
+      "name": "Chamar Coletor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $json.total }}", "operation": "largerEqual", "value2": 1 }]
+        }
+      },
+      "name": "Tem vagas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Iterar vagas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "listId": "={{ $env.TRELLO_LIST_TRIAGEM }}",
+        "name": "=[{{ $json.score }}] {{ $json.title }} — {{ $json.company }}",
+        "additionalFields": {
+          "description": "🔗 URL: {{ $json.url }}\n🏭 Plataforma: {{ $json.platform }}\n📅 Coletada em: {{ $now.format('YYYY-MM-DD HH:mm') }}\n📊 Score: {{ $json.score }}/100\n🔄 Tentativas: 0\n💬 Motivo: {{ $json.motivo }}"
+        }
+      },
+      "name": "Criar Card Trello",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "name": "Wait 1s (rate limit)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1500, 200]
+    }
+  ],
+  "connections": {
+    "Schedule - 2x por dia": { "main": [[{ "node": "Chamar Coletor", "type": "main", "index": 0 }]] },
+    "Chamar Coletor": { "main": [[{ "node": "Tem vagas?", "type": "main", "index": 0 }]] },
+    "Tem vagas?": { "main": [[{ "node": "Iterar vagas", "type": "main", "index": 0 }]] },
+    "Iterar vagas": { "main": [[{ "node": "Criar Card Trello", "type": "main", "index": 0 }]] },
+    "Criar Card Trello": { "main": [[{ "node": "Wait 1s (rate limit)", "type": "main", "index": 0 }]] },
+    "Wait 1s (rate limit)": { "main": [[{ "node": "Iterar vagas", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "timezone": "America/Sao_Paulo" }
+}
