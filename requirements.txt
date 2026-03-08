@@ -12,3 +12,4 @@ pytest-asyncio
 pytest-mock
 pytest-cov
 respx
+python-jobspy==1.1.82

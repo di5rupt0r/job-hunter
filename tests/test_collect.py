@@ -87,8 +87,9 @@ def test_collect_and_score_deduplica_por_url(mock_mcp):
         "city": "SP", "modality": "remoto", "description": "Python", "platform": "gupy"
     }
     with patch("collect.collect_gupy", return_value=[job, job]):
-        with patch("collect.score_job", return_value={"score": 75, "descarte": False, "motivo": "ok", "alerta": None}):
-            results = collect.collect_and_score()
+        with patch("collect.collect_jobspy", return_value=[]):
+            with patch("collect.score_job", return_value={"score": 75, "descarte": False, "motivo": "ok", "alerta": None}):
+                results = collect.collect_and_score()
     urls = [r["url"] for r in results]
     assert urls.count("https://vaga-dup.com") == 1
 
@@ -102,11 +103,12 @@ def test_collect_and_score_filtra_abaixo_threshold(mock_mcp):
     ]
     scores = [30, 55, 80]
     with patch("collect.collect_gupy", return_value=jobs):
-        with patch("collect.score_job") as mock_score:
-            mock_score.side_effect = [
-                {"score": s, "descarte": False, "motivo": "ok", "alerta": None} for s in scores
-            ]
-            results = collect.collect_and_score()
+        with patch("collect.collect_jobspy", return_value=[]):
+            with patch("collect.score_job") as mock_score:
+                mock_score.side_effect = [
+                    {"score": s, "descarte": False, "motivo": "ok", "alerta": None} for s in scores
+                ]
+                results = collect.collect_and_score()
     # Apenas score 80 está acima do threshold 60
     assert len(results) == 1
     assert results[0]["score"] == 80
@@ -135,3 +137,65 @@ def test_extract_company_string():
 def test_extract_company_missing():
     import collect
     assert collect._extract_company({}) == ""
+
+
+# JobSpy tests (RED: devem falhar ate STEP 2)
+
+def make_mock_jobspy_df(rows):
+    mock_df = MagicMock()
+    mock_df.iterrows.return_value = iter(list(enumerate(rows)))
+    return mock_df
+
+
+def test_collect_jobspy_returns_normalized_list():
+    import collect
+    rows = [
+        {"title": "Estagio Dev", "company": "Corp SA", "location": "Campinas, SP",
+         "description": "Python APIs", "job_url": "https://job1.com",
+         "site": "linkedin", "is_remote": False},
+        {"title": "Estagio DevOps", "company": "Tech Ltda", "location": "Brasil",
+         "description": "Docker CI/CD", "job_url": "https://job2.com",
+         "site": "indeed", "is_remote": True},
+    ]
+    with patch("collect.scrape_jobs", return_value=make_mock_jobspy_df(rows), create=True):
+        result = collect.collect_jobspy(["estagio python"])
+    assert len(result) == 2
+    required_keys = {"title", "company", "city", "modality", "description", "url", "source"}
+    assert required_keys.issubset(result[0].keys())
+    assert required_keys.issubset(result[1].keys())
+
+
+def test_collect_jobspy_truncates_description():
+    import collect
+    long_desc = "x" * (collect.MAX_DESCRIPTION_CHARS + 100)
+    rows = [{"title": "Job", "company": "Co", "location": "SP",
+             "description": long_desc, "job_url": "https://job3.com",
+             "site": "indeed", "is_remote": False}]
+    with patch("collect.scrape_jobs", return_value=make_mock_jobspy_df(rows), create=True):
+        result = collect.collect_jobspy(["query"])
+    assert len(result[0]["description"]) == collect.MAX_DESCRIPTION_CHARS
+
+
+def test_collect_jobspy_empty_results():
+    import collect
+    with patch("collect.scrape_jobs", return_value=make_mock_jobspy_df([]), create=True):
+        result = collect.collect_jobspy(["query"])
+    assert result == []
+
+
+def test_collect_and_score_deduplicates_across_sources(mock_mcp):
+    import collect
+    shared_url = "https://shared-job.com"
+    gupy_job = {"url": shared_url, "title": "Dev", "company": "Co",
+                "city": "SP", "modality": "remoto", "description": "Python",
+                "platform": "gupy"}
+    jobspy_job = {"url": shared_url, "title": "Dev", "company": "Co",
+                  "city": "SP", "modality": "remoto", "description": "Python",
+                  "source": "linkedin"}
+    with patch("collect.collect_gupy", return_value=[gupy_job]):
+        with patch("collect.collect_jobspy", return_value=[jobspy_job], create=True):
+            with patch("collect.score_job", return_value={
+                "score": 75, "descarte": False, "motivo": "ok", "alerta": None
+            }):
+                results = collect.collect_and_score()
+    assert [r["url"] for r in results].count(shared_url) == 1

@@ -10,6 +10,7 @@ import httpx
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
+from jobspy import scrape_jobs
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -163,6 +164,41 @@ def collect_gupy() -> list[dict]:
     return jobs
 
 
+
+def collect_jobspy(queries: list[str]) -> list[dict]:
+    """Coleta vagas via python-jobspy (LinkedIn, Indeed, Glassdoor, Google)."""
+    jobs = []
+    seen: set[str] = set()
+    for query in queries:
+        try:
+            results = scrape_jobs(
+                site_name=["linkedin", "indeed", "glassdoor", "google"],
+                search_term=query,
+                location="Campinas, SP, Brasil",
+                job_type="internship",
+                results_wanted=20,
+                hours_old=48,
+                country_indeed="Brazil",
+                verbose=0,
+            )
+            for _, row in results.iterrows():
+                url = str(row.get("job_url", ""))
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                jobs.append({
+                    "title": str(row.get("title", "")),
+                    "company": str(row.get("company", "")),
+                    "city": str(row.get("location", "")),
+                    "modality": "remoto" if row.get("is_remote") else "on-site",
+                    "description": str(row.get("description", ""))[:MAX_DESCRIPTION_CHARS],
+                    "url": url,
+                    "source": str(row.get("site", "jobspy")),
+                })
+        except Exception as e:
+            print(f"[WARN] JobSpy query {query!r}: {e}")
+    return jobs
+
 def collect_and_score() -> list[dict]:
     """Coleta vagas da Gupy, faz scoring e retorna vagas com score >= threshold."""
     profile_md, policy_md = load_profile_and_policy()
@@ -170,14 +206,14 @@ def collect_and_score() -> list[dict]:
     threshold_match = re.search(r"score_minimo_candidatura:\s*(\d+)", policy_md)
     threshold = int(threshold_match.group(1)) if threshold_match else 60
 
-    raw_jobs = collect_gupy()
+    raw_jobs = collect_gupy() + collect_jobspy(GUPY_SEARCH_QUERIES)
     seen_urls = set()
     deduped = []
     for j in raw_jobs:
         if j["url"] not in seen_urls:
             seen_urls.add(j["url"])
             deduped.append(j)
-    print(f"[INFO] Coletadas {len(deduped)} vagas brutas")
+    print(f"[INFO] Coletadas {len(deduped)} vagas brutas ({len(raw_jobs)} com duplicatas)")
 
     scored = []
     for job in deduped:
