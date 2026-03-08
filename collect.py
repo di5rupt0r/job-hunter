@@ -21,11 +21,10 @@ GUPY_JOBS_PER_QUERY = 20
 MAX_DESCRIPTION_CHARS = 800
 SCORE_MAX_TOKENS = 200
 GUPY_SEARCH_QUERIES = [
-    "estágio cibersegurança", "estágio segurança da informação", "estágio devops",
-    "estágio python", "estágio infraestrutura", "estágio cloud",
-    "estágio backend", "estágio dados", "estágio TI remoto",
-    "estágio linux", "estágio docker", "estágio automação",
-    "estágio campinas", "estágio hortolândia",
+    # Gupy jobName faz match literal no titulo - usar palavras unicas sem acento
+    "estagio", "ciberseguranca", "devops", "python",
+    "infraestrutura", "cloud", "backend", "dados",
+    "linux", "docker", "automacao", "seguranca",
 ]
 # Subset usada pelo JobSpy — portais internacionais são mais lentos, queries reduzidas
 JOBSPY_SEARCH_QUERIES = [
@@ -37,6 +36,8 @@ JOBSPY_SEARCH_QUERIES = [
 llm_client = OpenAI(
     base_url="https://models.inference.ai.azure.com",
     api_key=os.environ["GITHUB_TOKEN"],
+    max_retries=0,  # falha rapido no 429 em vez de backoff automatico
+    timeout=10.0,
 )
 
 # ─── Basic Memory MCP Cache ───────────────────────────────────────────────────
@@ -132,7 +133,7 @@ def score_job(
         return json.loads(raw)
     except Exception as e:
         print(f"[WARN] Erro no scoring LLM: {e}")
-        return {"score": 50, "descarte": False, "motivo": "scoring indisponível", "alerta": None}
+        return {"score": 65, "descarte": False, "motivo": "scoring indisponivel - revisar manualmente", "alerta": "LLM_UNAVAILABLE"}
 
 
 # ─── Coletores ────────────────────────────────────────────────────────────────
