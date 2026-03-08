@@ -1,6 +1,7 @@
 browser-use==0.1.40
 playwright
 langchain-openai
+pyyaml  # transitive dep de langchain-core
 python-dotenv
 fastapi
 uvicorn[standard]
