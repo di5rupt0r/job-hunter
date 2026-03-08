@@ -35,18 +35,27 @@ llm_client = OpenAI(
 _CACHE = {"profile": None, "policy": None, "loaded_at": 0}
 
 
+_MCP_SESSION: dict = {}
+
 def _call_mcp(tool: str, params: dict) -> str:
     url = os.environ["BASIC_MEMORY_MCP_URL"]
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
+    h = {"Content-Type": "application/json",
+         "Accept": "application/json, text/event-stream"}
+    if "session_id" not in _MCP_SESSION:
+        r = httpx.post(url, headers=h, timeout=HTTP_TIMEOUT, json={
+            "jsonrpc": "2.0", "id": 0, "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                       "clientInfo": {"name": "collect", "version": "1.0"}},
+        })
+        r.raise_for_status()
+        _MCP_SESSION["session_id"] = r.headers["mcp-session-id"]
+    h["mcp-session-id"] = _MCP_SESSION["session_id"]
+    r = httpx.post(url, headers=h, timeout=HTTP_TIMEOUT, json={
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {"name": tool, "arguments": params},
-    }
-    r = httpx.post(url, json=payload, timeout=HTTP_TIMEOUT)
+    })
     r.raise_for_status()
-    result = r.json()
-    return result["result"]["content"][0]["text"]
+    return r.json()["result"]["content"][0]["text"]
 
 
 def load_profile_and_policy():
@@ -127,7 +136,7 @@ def collect_gupy() -> list[dict]:
         try:
             r = httpx.get(
                 "https://portal.api.gupy.io/api/v1/jobs",
-                params={"name": q, "limit": GUPY_JOBS_PER_QUERY, "offset": 0},
+                params={"jobName": q, "limit": GUPY_JOBS_PER_QUERY, "offset": 0},
                 timeout=HTTP_TIMEOUT,
                 headers={"User-Agent": "Mozilla/5.0"},
             )
