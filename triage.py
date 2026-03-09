@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Dict
 
-from openai import OpenAI
+from llm_provider import get_client, get_model
 
 logger = logging.getLogger(__name__)
 
@@ -66,31 +65,6 @@ def filter_hard(job: Dict) -> bool:
         return False
 
     return True
-
-
-def get_client() -> OpenAI:
-    """Wrapper simples para obter cliente OpenAI‑compat de acordo com o provider."""
-    provider = os.getenv("LLM_PROVIDER", "groq")
-    if provider == "groq":
-        return OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=os.environ["GROQ_API_KEY"],
-        )
-    if provider == "github":
-        return OpenAI(
-            base_url="https://models.inference.ai.azure.com",
-            api_key=os.environ["GITHUB_TOKEN"],
-        )
-    raise ValueError(f"Provider desconhecido: {provider}")
-
-
-def get_model() -> str:
-    provider = os.getenv("LLM_PROVIDER", "groq")
-    if provider == "groq":
-        return "llama-3.1-70b-versatile"
-    if provider == "github":
-        return "gpt-4o-mini"
-    raise ValueError(f"Provider desconhecido: {provider}")
 
 
 def score_job(

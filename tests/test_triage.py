@@ -67,6 +67,9 @@ def test_is_rmc_reconhece_cidade_valida():
 def test_score_job_retorna_inteiro_entre_0_e_100(monkeypatch, sample_job):
     import triage
 
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+
     fake_client = MagicMock()
     fake_response = MagicMock()
     fake_response.choices[0].message.content = "85"
@@ -90,6 +93,11 @@ def test_score_job_retorna_inteiro_entre_0_e_100(monkeypatch, sample_job):
 
 def test_score_job_retorna_menos_um_em_erro_de_llm(sample_job):
     import triage
+
+    import os
+
+    os.environ.setdefault("LLM_PROVIDER", "groq")
+    os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
 
     with patch("triage.get_client") as mock_client, patch(
         "triage.get_model", return_value="llama-3.1-70b-versatile"
