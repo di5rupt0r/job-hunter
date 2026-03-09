@@ -1,25 +1,27 @@
 """
-Coleta vagas de Gupy, faz scoring via LLM (GitHub Models API).
+Coleta vagas de Gupy e JobSpy.
 Carrega perfil e política de triagem do Basic Memory MCP (cache de 6h).
+
+A lógica de triagem (hardcoded + LLM) vive em `triage.py`.
 """
+import logging
 import os
-import re
-import json
 import time
-import httpx
 from pathlib import Path
+
+import httpx
 from dotenv import load_dotenv
-from openai import OpenAI
 from jobspy import scrape_jobs
 
 load_dotenv(Path(__file__).parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
 CACHE_TTL = 6 * 3600
 HTTP_TIMEOUT = 15
 GUPY_JOBS_PER_QUERY = 20
 MAX_DESCRIPTION_CHARS = 800
-SCORE_MAX_TOKENS = 200
 GUPY_SEARCH_QUERIES = [
     # Gupy jobName faz match literal no titulo - usar palavras unicas sem acento
     "estagio", "ciberseguranca", "devops", "python",
@@ -31,14 +33,6 @@ JOBSPY_SEARCH_QUERIES = [
     "software engineering intern", "cybersecurity intern", "devops intern",
     "backend intern campinas", "python intern brazil",
 ]
-
-# ─── LLM Client (GitHub Models API) ───────────────────────────────────────────
-llm_client = OpenAI(
-    base_url="https://models.inference.ai.azure.com",
-    api_key=os.environ["GITHUB_TOKEN"],
-    max_retries=0,  # falha rapido no 429 em vez de backoff automatico
-    timeout=10.0,
-)
 
 # ─── Basic Memory MCP Cache ───────────────────────────────────────────────────
 _CACHE = {"profile": None, "policy": None, "loaded_at": 0}
@@ -84,13 +78,14 @@ def load_profile_and_policy():
         _CACHE = {"profile": profile_md, "policy": policy_md, "loaded_at": time.time()}
         return profile_md, policy_md
     except Exception as e:
-        print(f"[WARN] Falha ao carregar Basic Memory: {e}. Usando fallback.")
+        logger.warning("Falha ao carregar Basic Memory: %s. Usando fallback.", e)
         fallback_profile = "Candidato: Gabriel. Skills: Python, Docker, Linux, Cloud, APIs."
         fallback_policy = "score_minimo: 60. Blacklist: vendas, atendimento, suporte, helpdesk."
         return fallback_profile, fallback_policy
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _extract_company(job_data: dict) -> str:
     company = job_data.get("company", "")
@@ -99,44 +94,8 @@ def _extract_company(job_data: dict) -> str:
     return str(company)
 
 
-# ─── Scoring via LLM ──────────────────────────────────────────────────────────
-
-def score_job(
-    title: str, company: str, city: str, modality: str,
-    description: str, policy_md: str, profile_md: str = ""
-) -> dict:
-    prompt_match = re.search(r"## Prompt de Triagem.*?```\n(.*?)```", policy_md, re.DOTALL)
-    if prompt_match:
-        scoring_prompt = prompt_match.group(1)
-    else:
-        scoring_prompt = policy_md
-
-    user_content = (
-        scoring_prompt
-        .replace("{perfil}", profile_md)
-        .replace("{titulo}", title)
-        .replace("{empresa}", company)
-        .replace("{cidade}", city)
-        .replace("{modalidade}", modality)
-        .replace("{descricao}", description[:MAX_DESCRIPTION_CHARS])
-    )
-
-    try:
-        resp = llm_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": user_content}],
-            temperature=0.1,
-            max_tokens=SCORE_MAX_TOKENS,
-        )
-        raw = resp.choices[0].message.content.strip()
-        raw = re.sub(r"^```json\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
-        return json.loads(raw)
-    except Exception as e:
-        print(f"[WARN] Erro no scoring LLM: {e}")
-        return {"score": 65, "descarte": False, "motivo": "scoring indisponivel - revisar manualmente", "alerta": "LLM_UNAVAILABLE"}
-
-
 # ─── Coletores ────────────────────────────────────────────────────────────────
+
 
 def collect_gupy() -> list[dict]:
     """Coleta vagas da API pública da Gupy."""
@@ -166,7 +125,7 @@ def collect_gupy() -> list[dict]:
                     "platform": "gupy",
                 })
         except Exception as e:
-            print(f"[WARN] Gupy query '{q}': {e}")
+            logger.warning("Gupy query %r falhou: %s", q, e)
     return jobs
 
 
@@ -202,41 +161,22 @@ def collect_jobspy(queries: list[str]) -> list[dict]:
                     "platform": str(row.get("site", "jobspy")),
                 })
         except Exception as e:
-            print(f"[WARN] JobSpy query {query!r}: {e}")
+            logger.warning("JobSpy query %r falhou: %s", query, e)
     return jobs
 
-def collect_and_score() -> list[dict]:
-    """Coleta vagas da Gupy, faz scoring e retorna vagas com score >= threshold."""
-    profile_md, policy_md = load_profile_and_policy()
 
-    threshold_match = re.search(r"score_minimo_candidatura:\s*(\d+)", policy_md)
-    threshold = int(threshold_match.group(1)) if threshold_match else 60
-
+def collect_jobs() -> list[dict]:
+    """Coleta vagas das fontes configuradas e deduplica por URL."""
     raw_jobs = collect_gupy() + collect_jobspy(JOBSPY_SEARCH_QUERIES)
-    seen_urls = set()
-    deduped = []
-    for j in raw_jobs:
-        if j["url"] not in seen_urls:
-            seen_urls.add(j["url"])
-            deduped.append(j)
-    print(f"[INFO] Coletadas {len(deduped)} vagas brutas ({len(raw_jobs)} com duplicatas)")
-
-    scored = []
-    for job in deduped:
-        result = score_job(
-            title=job["title"],
-            company=job["company"],
-            city=job.get("city", ""),
-            modality=job.get("modality", ""),
-            description=job.get("description", ""),
-            policy_md=policy_md,
-            profile_md=profile_md,
-        )
-        if result.get("descarte"):
+    seen_urls: set[str] = set()
+    deduped: list[dict] = []
+    for job in raw_jobs:
+        url = job.get("url")
+        if not url or url in seen_urls:
             continue
-        score = result.get("score", 0)
-        if score >= threshold:
-            scored.append({**job, "score": score, "motivo": result.get("motivo", ""), "alerta": result.get("alerta")})
-
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored
+        seen_urls.add(url)
+        deduped.append(job)
+    logger.info(
+        "Coletadas %d vagas brutas (%d com duplicatas)", len(deduped), len(raw_jobs)
+    )
+    return deduped

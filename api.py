@@ -2,17 +2,21 @@
 Microserviço HTTP que o n8n chama via HTTP Request node.
 Roda na porta 8000 do host.
 """
+import logging
+from pathlib import Path
+
+import db
+from apply import apply_sync
+from collect import collect_jobs, load_profile_and_policy
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
-from pathlib import Path
-import db
-from collect import collect_and_score
-from apply import apply_sync
-from dotenv import load_dotenv
-import os
+from triage import filter_hard, score_job
 
 load_dotenv(Path(__file__).parent / ".env")
 db.init_db()
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Candidatura Agent API")
 
@@ -37,11 +41,50 @@ def health():
 
 @app.post("/collect")
 def collect():
-    """Coleta vagas, faz score e retorna lista. N8n cria cards no Trello."""
-    jobs = collect_and_score()
+    """Coleta vagas brutas e salva no banco com status 'collected'."""
+    jobs = collect_jobs()
     for j in jobs:
-        db.upsert_job(j["url"], j["title"], j["company"], j["platform"], j["score"])
+        url = j["url"]
+        db.upsert_job(url, j["title"], j["company"], j["platform"], 0)
+        db.update_status(url, "collected")
+    logger.info("Coleta concluida com %d vagas", len(jobs))
     return {"jobs": jobs, "total": len(jobs)}
+
+
+@app.post("/triage")
+def triage():
+    """Triagem em duas camadas das vagas com status='collected'."""
+    _, policy_md = load_profile_and_policy()
+    raw_jobs = {j["url"]: j for j in collect_jobs()}
+
+    triaged = []
+    for url, job in raw_jobs.items():
+        db_job = db.get_job(url)
+        if not db_job or db_job["status"] != "collected":
+            continue
+
+        if not filter_hard(job):
+            logger.info("Vaga %s descartada na camada hardcoded", url)
+            continue
+
+        score = score_job(
+            title=job["title"],
+            company=job["company"],
+            city=job.get("city", ""),
+            modality=job.get("modality", ""),
+            description=job.get("description", ""),
+            policy_md=policy_md,
+        )
+        if score < 0:
+            logger.info("Vaga %s descartada pelo LLM (score=%s)", url, score)
+            continue
+
+        db.upsert_job(url, job["title"], job["company"], job["platform"], score)
+        db.update_status(url, "queued")
+        triaged.append({**job, "score": score})
+
+    logger.info("Triagem concluiu com %d vagas aprovadas", len(triaged))
+    return {"jobs": triaged, "total": len(triaged)}
 
 
 @app.post("/apply")

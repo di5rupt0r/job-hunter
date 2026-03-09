@@ -12,14 +12,14 @@ def test_health_retorna_200(client):
 def test_collect_retorna_lista_e_total(client):
     fake_jobs = [
         {"url": "https://j1.com", "title": "DevOps", "company": "Co A",
-         "platform": "gupy", "score": 80, "motivo": "ok", "alerta": None}
+         "platform": "gupy"}
     ]
-    with patch("api.collect_and_score", return_value=fake_jobs):
+    with patch("api.collect_jobs", return_value=fake_jobs):
         resp = client.post("/collect")
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
-    assert data["jobs"][0]["score"] == 80
+    assert data["jobs"][0]["url"] == "https://j1.com"
 
 
 def test_apply_success_move_status_para_waiting(client):
@@ -86,3 +86,38 @@ def test_status_atualiza_corretamente(client):
     })
     assert resp.json() == {"ok": True}
     assert db.get_job("https://vaga-u.com")["status"] == "interview"
+
+
+def test_triage_processa_vagas_coletadas(client):
+    import db
+
+    url = "https://vaga-t.com"
+    db.upsert_job(url, "DevOps", "Co A", "gupy", 0)
+    db.update_status(url, "collected")
+
+    fake_jobs = [
+        {
+            "url": url,
+            "title": "DevOps",
+            "company": "Co A",
+            "city": "Campinas",
+            "modality": "remoto",
+            "description": "Vaga de DevOps em Campinas.",
+            "platform": "gupy",
+        }
+    ]
+
+    with patch("api.collect_jobs", return_value=fake_jobs), patch(
+        "api.load_profile_and_policy", return_value=("PROFILE", "POLICY")
+    ), patch("api.filter_hard", return_value=True), patch(
+        "api.score_job", return_value=85
+    ):
+        resp = client.post("/triage")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["jobs"][0]["score"] == 85
+    job = db.get_job(url)
+    assert job["status"] == "queued"
+    assert job["score"] == 85
