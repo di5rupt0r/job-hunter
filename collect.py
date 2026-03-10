@@ -12,6 +12,11 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
+try:
+    from jobspy import scrape_jobs  # instalado via --no-deps no deploy.sh
+except ImportError:  # ambiente local sem jobspy
+    scrape_jobs = None  # type: ignore[assignment]
+
 load_dotenv(Path(__file__).parent / ".env")
 
 logger = logging.getLogger(__name__)
@@ -131,7 +136,9 @@ def collect_gupy() -> list[dict]:
 
 def collect_jobspy(queries: list[str]) -> list[dict]:
     """Coleta vagas via python-jobspy (LinkedIn e Indeed — Glassdoor/Google não suportam BR)."""
-    from jobspy import scrape_jobs
+    if scrape_jobs is None:
+        logger.warning("jobspy não instalado — pulando coleta JobSpy")
+        return []
     jobs = []
     seen: set[str] = set()
     for query in queries:
