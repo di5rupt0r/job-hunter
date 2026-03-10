@@ -20,13 +20,11 @@ fail() { echo "[deploy] ✗ $*" >&2; exit 1; }
 
 # ── 1. Dependências Python ────────────────────────────────────────────────────
 log "Atualizando dependências Python..."
-if [ -f "$VENV_DIR/bin/pip" ]; then
-  sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
-elif command -v uv &>/dev/null; then
-  sudo -u "$PROJECT_USER" uv pip install --python "$VENV_DIR/bin/python" -q -r "$SCRIPT_DIR/requirements.txt"
-else
-  fail "Nenhum venv em $VENV_DIR e uv não encontrado. Crie o venv primeiro: python3 -m venv $VENV_DIR"
+if [ ! -f "$VENV_DIR/bin/pip" ]; then
+  log "venv não encontrado — criando em $VENV_DIR..."
+  sudo -u "$PROJECT_USER" python3 -m venv "$VENV_DIR"
 fi
+sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
 ok "Dependências atualizadas."
 
 # ── 2. Reinicia serviço Python ────────────────────────────────────────────────
