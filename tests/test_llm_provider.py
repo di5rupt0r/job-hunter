@@ -40,7 +40,7 @@ def test_get_model_retorna_modelo_por_provider(monkeypatch):
     import llm_provider
 
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    assert llm_provider.get_model() == "llama-3.1-70b-versatile"
+    assert llm_provider.get_model() == "llama-3.3-70b-versatile"
 
     monkeypatch.setenv("LLM_PROVIDER", "github")
     assert llm_provider.get_model() == "gpt-4o-mini"

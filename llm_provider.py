@@ -25,7 +25,7 @@ def get_model() -> str:
     """Retorna nome do modelo configurado para o provider atual."""
     provider = os.getenv("LLM_PROVIDER", "groq")
     mapping = {
-        "groq": "llama-3.1-70b-versatile",
+        "groq": "llama-3.3-70b-versatile",
         "github": "gpt-4o-mini",
     }
     try:
