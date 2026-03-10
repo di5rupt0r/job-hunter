@@ -82,6 +82,20 @@ done
 $N8N_READY || fail "n8n não ficou pronto em 60s — cheque: docker logs n8n"
 ok "n8n pronto em ${N8N_URL}"
 
+# Aguarda a API REST do n8n estar acessível (pode demorar mais que o /healthz)
+log "Aguardando API REST do n8n..."
+N8N_API_READY=false
+for i in $(seq 1 30); do
+  if curl -sf "${N8N_URL}/api/v1/workflows" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null 2>&1; then
+    N8N_API_READY=true
+    break
+  fi
+  sleep 2
+done
+$N8N_API_READY || fail "API REST do n8n não ficou pronta em 60s"
+ok "API REST do n8n pronta"
+
 # ── 4+5. Remove workflows antigos + importa novos ────────────────────────────
 log "Importando workflows (usando import_workflows.py)..."
 sudo -u "$PROJECT_USER" "$VENV_DIR/bin/python" \
