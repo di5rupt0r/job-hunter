@@ -12,5 +12,11 @@ pytest
 pytest-asyncio
 pytest-mock
 pytest-cov
-respx
-python-jobspy==1.1.46
+respx# python-jobspy é instalado via --no-deps no deploy.sh para contornar
+# o pin NUMPY==1.26.3 que não tem wheel para Python 3.12.
+# As deps abaixo substituem as que o jobspy declararia:
+numpy>=1.26.4
+pandas>=2.1.0,<3.0.0
+beautifulsoup4>=4.12.2,<5.0.0
+regex>=2024.4.28
+tls-client>=1.0.1,<2.0.0python-jobspy==1.1.46

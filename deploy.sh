@@ -27,7 +27,18 @@ fi
 # Atualiza pip+setuptools antes de instalar — necessário no Python 3.12
 # (distutils foi removido; setuptools novo inclui o shim)
 sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q --upgrade pip setuptools wheel
-sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
+
+# python-jobspy pina NUMPY==1.26.3 que não tem wheel para Python 3.12.
+# Instalamos tudo exceto jobspy primeiro (com numpy>=1.26.4 compatível),
+# depois jobspy com --no-deps para ignorar o pin de numpy.
+python3 -c "
+lines = open('$SCRIPT_DIR/requirements.txt').read().splitlines()
+without = [l for l in lines if 'python-jobspy' not in l]
+open('/tmp/_reqs_no_jobspy.txt', 'w').write('\n'.join(without))
+"
+sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r /tmp/_reqs_no_jobspy.txt
+rm -f /tmp/_reqs_no_jobspy.txt
+sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q --no-deps python-jobspy==1.1.82
 ok "Dependências atualizadas."
 
 # ── 2. Reinicia serviço Python ────────────────────────────────────────────────
