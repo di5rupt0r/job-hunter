@@ -12,7 +12,7 @@ COMPOSE_FILE="$PROJECT_HOME/docker/n8n/docker-compose.yml"
 N8N_URL="http://localhost:5678"
 N8N_API_KEY="n8n_api_7314bfbba89b407e530f0d8232524ee61856cd58ab4a4b05"
 WORKFLOWS_DIR="$SCRIPT_DIR/n8n-workflows"
-VENV_DIR="$SCRIPT_DIR/.venv"
+VENV_DIR="$SCRIPT_DIR/venv"  # alinhado com o ExecStart da unit systemd
 
 log()  { echo "[deploy] $*"; }
 ok()   { echo "[deploy] ✓ $*"; }
