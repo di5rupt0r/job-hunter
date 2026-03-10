@@ -3,11 +3,16 @@
 # Uso: bash deploy.sh
 set -euo pipefail
 
-COMPOSE_FILE="$HOME/docker/n8n/docker-compose.yml"
+# Resolve project dir from the script itself so sudo doesn't break $HOME
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_USER="$(stat -c '%U' "$SCRIPT_DIR")"
+PROJECT_HOME="$(getent passwd "$PROJECT_USER" | cut -d: -f6)"
+
+COMPOSE_FILE="$PROJECT_HOME/docker/n8n/docker-compose.yml"
 N8N_URL="http://localhost:5678"
 N8N_API_KEY="n8n_api_7314bfbba89b407e530f0d8232524ee61856cd58ab4a4b05"
-WORKFLOWS_DIR="$HOME/job-hunter/n8n-workflows"
-VENV_DIR="$HOME/job-hunter/.venv"
+WORKFLOWS_DIR="$SCRIPT_DIR/n8n-workflows"
+VENV_DIR="$SCRIPT_DIR/.venv"
 
 log()  { echo "[deploy] $*"; }
 ok()   { echo "[deploy] ✓ $*"; }
@@ -16,11 +21,11 @@ fail() { echo "[deploy] ✗ $*" >&2; exit 1; }
 # ── 1. Dependências Python ────────────────────────────────────────────────────
 log "Atualizando dependências Python..."
 if [ -f "$VENV_DIR/bin/pip" ]; then
-  "$VENV_DIR/bin/pip" install -q -r "$HOME/job-hunter/requirements.txt"
+  sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
 elif command -v uv &>/dev/null; then
-  uv pip install -q -r "$HOME/job-hunter/requirements.txt"
+  sudo -u "$PROJECT_USER" uv pip install --python "$VENV_DIR/bin/python" -q -r "$SCRIPT_DIR/requirements.txt"
 else
-  pip install -q -r "$HOME/job-hunter/requirements.txt"
+  fail "Nenhum venv em $VENV_DIR e uv não encontrado. Crie o venv primeiro: python3 -m venv $VENV_DIR"
 fi
 ok "Dependências atualizadas."
 
