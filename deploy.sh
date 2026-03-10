@@ -89,8 +89,8 @@ EXISTING=$(curl -sf "${N8N_URL}/api/v1/workflows" \
   python3 -c "import sys,json; [print(w['id']) for w in json.load(sys.stdin).get('data',[])]" 2>/dev/null || true)
 
 for WF_ID in $EXISTING; do
-  curl -sf -X DELETE "${N8N_URL}/api/v1/workflows/${WF_ID}" \
-    -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null
+  curl -s -X DELETE "${N8N_URL}/api/v1/workflows/${WF_ID}" \
+    -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null || true
   log "  Removido workflow id=${WF_ID}"
 done
 
@@ -109,7 +109,7 @@ print(json.dumps(d))
 PY
 )
 
-  RESULT=$(curl -sf -X POST "${N8N_URL}/api/v1/workflows" \
+  RESULT=$(curl -s -X POST "${N8N_URL}/api/v1/workflows" \
     -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
     -H "Content-Type: application/json" \
     -d "$BODY")
@@ -118,12 +118,11 @@ PY
 
   if [ -z "$WF_ID" ]; then
     echo "FALHOU."
-    echo "  Resposta: $RESULT"
+    echo "  Resposta: $(echo "$RESULT" | head -c 200)"
   else
-    curl -sf -X PATCH "${N8N_URL}/api/v1/workflows/${WF_ID}" \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-      -H "Content-Type: application/json" \
-      -d '{"active": true}' >/dev/null
+    # n8n 2.x: ativação via POST /activate (não PATCH)
+    curl -s -X POST "${N8N_URL}/api/v1/workflows/${WF_ID}/activate" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null || true
     echo "OK (id=${WF_ID})"
   fi
 done
