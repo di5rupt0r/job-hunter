@@ -24,6 +24,9 @@ if [ ! -f "$VENV_DIR/bin/pip" ]; then
   log "venv não encontrado — criando em $VENV_DIR..."
   sudo -u "$PROJECT_USER" python3 -m venv "$VENV_DIR"
 fi
+# Atualiza pip+setuptools antes de instalar — necessário no Python 3.12
+# (distutils foi removido; setuptools novo inclui o shim)
+sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q --upgrade pip setuptools wheel
 sudo -u "$PROJECT_USER" "$VENV_DIR/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt"
 ok "Dependências atualizadas."
 
