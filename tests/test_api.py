@@ -19,7 +19,24 @@ def test_collect_retorna_lista_e_total(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
+    assert data["new"] == 1
     assert data["jobs"][0]["url"] == "https://j1.com"
+
+
+def test_collect_nao_reseta_status_de_vagas_existentes(client):
+    """Vagas já processadas não devem ter status revertido para 'collected'."""
+    import db
+    url = "https://j-existing.com"
+    db.upsert_job(url, "SRE", "Co B", "gupy", 90)
+    db.update_status(url, "waiting")
+
+    fake_jobs = [{"url": url, "title": "SRE", "company": "Co B", "platform": "gupy"}]
+    with patch("api.collect_jobs", return_value=fake_jobs):
+        resp = client.post("/collect")
+
+    assert resp.status_code == 200
+    assert resp.json()["new"] == 0
+    assert db.get_job(url)["status"] == "waiting"
 
 
 def test_apply_success_move_status_para_waiting(client):
