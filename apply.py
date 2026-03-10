@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from browser_use import Agent, Browser, BrowserConfig
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -59,6 +58,7 @@ Comportamento esperado:
 
 
 async def run_agent(url: str, title: str, company: str) -> str:
+    from browser_use import Agent, Browser, BrowserConfig
     browser_config = BrowserConfig(
         headless=True,
         extra_chromium_args=[

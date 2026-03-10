@@ -11,7 +11,6 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from jobspy import scrape_jobs
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -132,6 +131,7 @@ def collect_gupy() -> list[dict]:
 
 def collect_jobspy(queries: list[str]) -> list[dict]:
     """Coleta vagas via python-jobspy (LinkedIn e Indeed — Glassdoor/Google não suportam BR)."""
+    from jobspy import scrape_jobs
     jobs = []
     seen: set[str] = set()
     for query in queries:
