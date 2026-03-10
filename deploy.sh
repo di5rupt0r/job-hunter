@@ -82,55 +82,11 @@ done
 $N8N_READY || fail "n8n não ficou pronto em 60s — cheque: docker logs n8n"
 ok "n8n pronto em ${N8N_URL}"
 
-# ── 4. Remove workflows antigos para evitar duplicatas ────────────────────────
-log "Removendo workflows existentes..."
-EXISTING=$(curl -sf "${N8N_URL}/api/v1/workflows" \
-  -H "X-N8N-API-KEY: ${N8N_API_KEY}" | \
-  python3 -c "import sys,json; [print(w['id']) for w in json.load(sys.stdin).get('data',[])]" 2>/dev/null || true)
-
-for WF_ID in $EXISTING; do
-  curl -s -X DELETE "${N8N_URL}/api/v1/workflows/${WF_ID}" \
-    -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null || true
-  log "  Removido workflow id=${WF_ID}"
-done
-
-# ── 5. Importa workflows ──────────────────────────────────────────────────────
-log "Importando workflows..."
-STRIP_PY="$SCRIPT_DIR/.deploy_strip.py"
-cat > "$STRIP_PY" <<'PYEOF'
-import json, sys
-d = json.load(open(sys.argv[1]))
-for k in ['active', 'id', 'tags', 'createdAt', 'updatedAt', 'versionId']:
-    d.pop(k, None)
-sys.stdout.write(json.dumps(d))
-PYEOF
-
-for f in "$WORKFLOWS_DIR"/*.json; do
-  WFLOW_NAME=$(python3 -c "import json; print(json.load(open('$f'))['name'])")
-  echo -n "[deploy]   $WFLOW_NAME ... "
-
-  BODY_FILE=$(mktemp)
-  python3 "$STRIP_PY" "$f" > "$BODY_FILE"
-
-  RESULT=$(curl -s -X POST "${N8N_URL}/api/v1/workflows" \
-    -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    -H "Content-Type: application/json" \
-    --data-binary "@$BODY_FILE")
-  rm -f "$BODY_FILE"
-
-  WF_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-
-  if [ -z "$WF_ID" ]; then
-    echo "FALHOU."
-    echo "  Resposta: $(echo "$RESULT" | head -c 300)"
-  else
-    # n8n 2.x: ativação via POST /activate (não PATCH)
-    curl -s -X POST "${N8N_URL}/api/v1/workflows/${WF_ID}/activate" \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" >/dev/null || true
-    echo "OK (id=${WF_ID})"
-  fi
-done
-rm -f "$STRIP_PY"
+# ── 4+5. Remove workflows antigos + importa novos ────────────────────────────
+log "Importando workflows (usando import_workflows.py)..."
+sudo -u "$PROJECT_USER" "$VENV_DIR/bin/python" \
+  "$SCRIPT_DIR/import_workflows.py" \
+  "$N8N_URL" "$N8N_API_KEY" "$WORKFLOWS_DIR"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
