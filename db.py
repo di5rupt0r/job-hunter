@@ -65,6 +65,14 @@ def increment_retry(url):
         return retry_count, new_status
 
 
+def update_trello_card_id(url, trello_card_id):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE jobs SET trello_card_id=?, updated_at=CURRENT_TIMESTAMP WHERE url=?",
+            (trello_card_id, url),
+        )
+
+
 def get_pending_retry():
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row

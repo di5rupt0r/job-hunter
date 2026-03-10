@@ -5,7 +5,10 @@
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "cronExpression", "expression": "0 8,20 * * *" }
+            {
+              "field": "cronExpression",
+              "expression": "0 8,20 * * *"
+            }
           ]
         },
         "timezone": "America/Sao_Paulo"
@@ -13,74 +16,571 @@
       "name": "Schedule - 2x por dia",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "http://host.docker.internal:8000/collect",
-        "options": { "timeout": 120000 },
+        "options": {
+          "timeout": 120000
+        },
         "responseFormat": "json"
       },
       "name": "Chamar Coletor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 300]
+      "position": [
+        500,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "number": [{ "value1": "={{ $json.total }}", "operation": "largerEqual", "value2": 1 }]
+          "number": [
+            {
+              "value1": "={{ $json.new }}",
+              "operation": "largerEqual",
+              "value2": 1
+            }
+          ]
         }
       },
-      "name": "Tem vagas?",
+      "name": "Tem Novas Vagas?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return ($input.first().json.new_jobs || []).map(job => ({ json: job }));"
+      },
+      "name": "Expandir Novas Vagas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        150
+      ]
     },
     {
       "parameters": {
         "batchSize": 1,
         "options": {}
       },
-      "name": "Iterar vagas",
+      "name": "Iterar Novas Vagas",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [1000, 200]
+      "position": [
+        1250,
+        150
+      ]
     },
     {
       "parameters": {
-        "operation": "create",
-        "listId": "={{ $env.TRELLO_LIST_TRIAGEM }}",
-        "name": "=[{{ $json.score }}] {{ $json.title }} — {{ $json.company }}",
-        "additionalFields": {
-          "description": "🔗 URL: {{ $json.url }}\n🏭 Plataforma: {{ $json.platform }}\n📅 Coletada em: {{ $now.format('YYYY-MM-DD HH:mm') }}\n📊 Score: {{ $json.score }}/100\n🔄 Tentativas: 0\n💬 Motivo: {{ $json.motivo }}"
-        }
+        "method": "POST",
+        "url": "https://api.trello.com/1/cards",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.TRELLO_API_KEY }}"
+            },
+            {
+              "name": "token",
+              "value": "={{ $env.TRELLO_TOKEN }}"
+            },
+            {
+              "name": "idList",
+              "value": "={{ $env.TRELLO_LIST_COLETADA }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.title }} — {{ $json.company }}"
+            },
+            {
+              "name": "desc",
+              "value": "=🔗 URL: {{ $json.url }}\n🏭 Plataforma: {{ $json.platform }}\n📅 Coletada em: {{ $now.format('YYYY-MM-DD HH:mm') }}"
+            }
+          ]
+        },
+        "responseFormat": "json"
       },
-      "name": "Criar Card Trello",
-      "type": "n8n-nodes-base.trello",
-      "typeVersion": 1,
-      "position": [1250, 200]
+      "name": "Criar Card Coletada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { trello_card_id: $input.first().json.id, url: $('Expandir Novas Vagas').item.json.url } }];"
+      },
+      "name": "Salvar Card ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/card-id",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "trello_card_id",
+              "value": "={{ $json.trello_card_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "POST /card-id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        150
+      ]
     },
     {
       "parameters": {
         "amount": 1,
         "unit": "seconds"
       },
-      "name": "Wait 1s (rate limit)",
+      "name": "Wait 1s Coleta",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [1500, 200]
+      "position": [
+        2250,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "name": "Aguardar Coleta",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/triage",
+        "options": {
+          "timeout": 300000
+        },
+        "responseFormat": "json"
+      },
+      "name": "Chamar Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "largerEqual",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "name": "Tem vagas aprovadas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return ($input.first().json.jobs || []).map(job => ({ json: job }));"
+      },
+      "name": "Expandir Vagas Aprovadas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Iterar Vagas Aprovadas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.trello_card_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Tem Card Trello?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.trello.com/1/cards/{{ $json.trello_card_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.TRELLO_API_KEY }}"
+            },
+            {
+              "name": "token",
+              "value": "={{ $env.TRELLO_TOKEN }}"
+            },
+            {
+              "name": "idList",
+              "value": "={{ $env.TRELLO_LIST_TRIAGEM }}"
+            },
+            {
+              "name": "name",
+              "value": "=[{{ $json.score }}] {{ $json.title }} — {{ $json.company }}"
+            }
+          ]
+        }
+      },
+      "name": "Mover Card p/ Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.trello.com/1/cards",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.TRELLO_API_KEY }}"
+            },
+            {
+              "name": "token",
+              "value": "={{ $env.TRELLO_TOKEN }}"
+            },
+            {
+              "name": "idList",
+              "value": "={{ $env.TRELLO_LIST_TRIAGEM }}"
+            },
+            {
+              "name": "name",
+              "value": "=[{{ $json.score }}] {{ $json.title }} — {{ $json.company }}"
+            },
+            {
+              "name": "desc",
+              "value": "=🔗 URL: {{ $json.url }}\n🏭 Plataforma: {{ $json.platform }}\n📊 Score: {{ $json.score }}/100"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "name": "Criar Card Triagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "name": "Wait 1s Triagem",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        300
+      ]
     }
   ],
   "connections": {
-    "Schedule - 2x por dia": { "main": [[{ "node": "Chamar Coletor", "type": "main", "index": 0 }]] },
-    "Chamar Coletor": { "main": [[{ "node": "Tem vagas?", "type": "main", "index": 0 }]] },
-    "Tem vagas?": { "main": [[{ "node": "Iterar vagas", "type": "main", "index": 0 }]] },
-    "Iterar vagas": { "main": [[{ "node": "Criar Card Trello", "type": "main", "index": 0 }]] },
-    "Criar Card Trello": { "main": [[{ "node": "Wait 1s (rate limit)", "type": "main", "index": 0 }]] },
-    "Wait 1s (rate limit)": { "main": [[{ "node": "Iterar vagas", "type": "main", "index": 0 }]] }
+    "Schedule - 2x por dia": {
+      "main": [
+        [
+          {
+            "node": "Chamar Coletor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Coletor": {
+      "main": [
+        [
+          {
+            "node": "Tem Novas Vagas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Novas Vagas?": {
+      "main": [
+        [
+          {
+            "node": "Expandir Novas Vagas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aguardar Coleta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir Novas Vagas": {
+      "main": [
+        [
+          {
+            "node": "Iterar Novas Vagas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iterar Novas Vagas": {
+      "main": [
+        [
+          {
+            "node": "Criar Card Coletada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aguardar Coleta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Card Coletada": {
+      "main": [
+        [
+          {
+            "node": "Salvar Card ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Card ID": {
+      "main": [
+        [
+          {
+            "node": "POST /card-id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /card-id": {
+      "main": [
+        [
+          {
+            "node": "Wait 1s Coleta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1s Coleta": {
+      "main": [
+        [
+          {
+            "node": "Iterar Novas Vagas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar Coleta": {
+      "main": [
+        [
+          {
+            "node": "Chamar Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar Triagem": {
+      "main": [
+        [
+          {
+            "node": "Tem vagas aprovadas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem vagas aprovadas?": {
+      "main": [
+        [
+          {
+            "node": "Expandir Vagas Aprovadas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Expandir Vagas Aprovadas": {
+      "main": [
+        [
+          {
+            "node": "Iterar Vagas Aprovadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iterar Vagas Aprovadas": {
+      "main": [
+        [
+          {
+            "node": "Tem Card Trello?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Tem Card Trello?": {
+      "main": [
+        [
+          {
+            "node": "Mover Card p/ Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Criar Card Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mover Card p/ Triagem": {
+      "main": [
+        [
+          {
+            "node": "Wait 1s Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Card Triagem": {
+      "main": [
+        [
+          {
+            "node": "Wait 1s Triagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1s Triagem": {
+      "main": [
+        [
+          {
+            "node": "Iterar Vagas Aprovadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": true,
-  "settings": { "timezone": "America/Sao_Paulo" }
+  "settings": {
+    "timezone": "America/Sao_Paulo"
+  }
 }

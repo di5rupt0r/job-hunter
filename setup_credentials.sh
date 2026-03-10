@@ -3,7 +3,7 @@
 # Execute UMA VEZ após obter Telegram e Trello credentials
 set -e
 
-ENV_FILE="$HOME/agent/.env"
+ENV_FILE="$HOME/job-hunter/.env"
 COMPOSE_FILE="$HOME/docker/n8n/docker-compose.yml"
 
 echo "=== Setup de Credenciais — Automação de Candidaturas ==="
@@ -17,6 +17,12 @@ read -p "Telegram Bot Token (de @BotFather): " TELEGRAM_BOT_TOKEN
 read -p "Telegram Chat ID: " TELEGRAM_CHAT_ID
 read -p "Trello API Key (trello.com/app-key): " TRELLO_API_KEY
 read -p "Trello Token (trello.com/app-key → Token): " TRELLO_TOKEN
+echo ""
+echo "Buscando boards disponíveis..."
+curl -s "https://api.trello.com/1/members/me/boards?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,id" \
+  | python3 -c "import sys,json; [print(f'  {b[\"name\"]}: {b[\"id\"]}') for b in json.load(sys.stdin)]"
+echo ""
+read -p "ID do board 'Job Hunter' (copiado acima): " BOARD_ID
 read -s -p "Senha para o painel n8n (pressione Enter para usar 'candidatura2026'): " N8N_PASS
 N8N_PASS="${N8N_PASS:-candidatura2026}"
 echo ""
@@ -26,45 +32,52 @@ sed -i "s|TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}|" "$ENV
 sed -i "s|TELEGRAM_CHAT_ID=.*|TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}|" "$ENV_FILE"
 sed -i "s|TRELLO_API_KEY=.*|TRELLO_API_KEY=${TRELLO_API_KEY}|" "$ENV_FILE"
 sed -i "s|TRELLO_TOKEN=.*|TRELLO_TOKEN=${TRELLO_TOKEN}|" "$ENV_FILE"
+sed -i "s|TRELLO_BOARD_ID=.*|TRELLO_BOARD_ID=${BOARD_ID}|" "$ENV_FILE"
 
-# ── Cria board Trello ─────────────────────────────────────────────────────────
+# ── Busca as listas existentes do board ──────────────────────────────────────
 echo ""
-echo "=== Criando board Trello 'Estagio Pipeline'... ==="
+echo "=== Lendo listas do board 'Job Hunter' (${BOARD_ID})... ==="
 
-BOARD_RESPONSE=$(curl -s -X POST "https://api.trello.com/1/boards/" \
-  --data-urlencode "name=Estagio Pipeline" \
-  --data-urlencode "key=${TRELLO_API_KEY}" \
-  --data-urlencode "token=${TRELLO_TOKEN}" \
-  --data-urlencode "defaultLists=false")
+LISTS_JSON=$(curl -s "https://api.trello.com/1/boards/${BOARD_ID}/lists?key=${TRELLO_API_KEY}&token=${TRELLO_TOKEN}&fields=name,id")
 
-BOARD_ID=$(echo "$BOARD_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
-
-if [ -z "$BOARD_ID" ]; then
-  echo "ERRO ao criar board. Resposta: $BOARD_RESPONSE"
+if [ -z "$LISTS_JSON" ] || echo "$LISTS_JSON" | grep -q '"message"'; then
+  echo "ERRO ao buscar listas. Resposta: $LISTS_JSON"
   exit 1
 fi
 
-echo "Board criado: $BOARD_ID"
-sed -i "s|TRELLO_BOARD_ID=.*|TRELLO_BOARD_ID=${BOARD_ID}|" "$ENV_FILE"
+declare -A NAME_TO_VAR=(
+  ["Coletada"]="COLETADA"
+  ["Triagem OK"]="TRIAGEM"
+  ["Candidatando"]="CANDIDATANDO"
+  ["Aguardando"]="AGUARDANDO"
+  ["Teste"]="TESTE"
+  ["Entrevista"]="ENTREVISTA"
+  ["Aprovada"]="APROVADA"
+  ["Recusada"]="RECUSADA"
+  ["Bloqueada"]="BLOQUEADA"
+)
 
-# ── Cria as 9 listas ──────────────────────────────────────────────────────────
-declare -a LISTA_VARS=("COLETADA" "TRIAGEM" "CANDIDATANDO" "AGUARDANDO" "TESTE" "ENTREVISTA" "APROVADA" "RECUSADA" "BLOQUEADA")
-declare -a LISTA_NOMES=("Coletada" "Triagem OK" "Candidatando" "Aguardando" "Teste" "Entrevista" "Aprovada" "Recusada" "Bloqueada")
 declare -A LIST_IDS
 
-for i in "${!LISTA_NOMES[@]}"; do
-  NOME="${LISTA_NOMES[$i]}"
-  VAR="${LISTA_VARS[$i]}"
-  RESP=$(curl -s -X POST "https://api.trello.com/1/lists" \
-    --data-urlencode "name=${NOME}" \
-    --data-urlencode "idBoard=${BOARD_ID}" \
-    --data-urlencode "key=${TRELLO_API_KEY}" \
-    --data-urlencode "token=${TRELLO_TOKEN}")
-  LIST_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
-  echo "  $NOME → $LIST_ID"
-  LIST_IDS[$VAR]=$LIST_ID
-  sed -i "s|TRELLO_LIST_${VAR}=.*|TRELLO_LIST_${VAR}=${LIST_ID}|" "$ENV_FILE"
-  sleep 0.4
+while IFS='|' read -r LIST_NAME LIST_ID; do
+  VAR="${NAME_TO_VAR[$LIST_NAME]}"
+  if [ -n "$VAR" ]; then
+    LIST_IDS[$VAR]="$LIST_ID"
+    echo "  $LIST_NAME → $LIST_ID"
+    sed -i "s|TRELLO_LIST_${VAR}=.*|TRELLO_LIST_${VAR}=${LIST_ID}|" "$ENV_FILE"
+  fi
+done < <(echo "$LISTS_JSON" | python3 -c "
+import sys, json
+for l in json.load(sys.stdin):
+    print(l['name'] + '|' + l['id'])
+")
+
+# Verifica se todas as listas foram encontradas
+REQUIRED_VARS=(TRIAGEM CANDIDATANDO AGUARDANDO COLETADA BLOQUEADA)
+for VAR in "${REQUIRED_VARS[@]}"; do
+  if [ -z "${LIST_IDS[$VAR]}" ]; then
+    echo "AVISO: lista '${VAR}' não encontrada no board. Verifique os nomes das listas no Trello."
+  fi
 done
 
 # ── Atualiza docker-compose.yml com todas as env vars ────────────────────────
@@ -121,7 +134,7 @@ echo -n "Agent API: " && curl -s http://localhost:8000/health
 # ── Importa workflows no n8n ─────────────────────────────────────────────────
 echo ""
 echo "=== Importando workflows n8n... ==="
-N8N_ADMIN_PASSWORD="${N8N_PASS}" bash "$HOME/agent/import_n8n_workflows.sh"
+N8N_ADMIN_PASSWORD="${N8N_PASS}" bash "$HOME/job-hunter/import_n8n_workflows.sh"
 
 echo ""
 echo "======================================="

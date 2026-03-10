@@ -41,14 +41,18 @@ def health():
 
 @app.post("/collect")
 def collect():
-    """Coleta vagas brutas e salva no banco com status 'collected'."""
+    """Coleta vagas brutas e salva no banco com status 'collected' apenas para novas."""
     jobs = collect_jobs()
+    new_jobs = []
     for j in jobs:
         url = j["url"]
+        is_new = db.get_job(url) is None
         db.upsert_job(url, j["title"], j["company"], j["platform"], 0)
-        db.update_status(url, "collected")
-    logger.info("Coleta concluida com %d vagas", len(jobs))
-    return {"jobs": jobs, "total": len(jobs)}
+        if is_new:
+            db.update_status(url, "collected")
+            new_jobs.append(j)
+    logger.info("Coleta concluida com %d vagas (%d novas)", len(jobs), len(new_jobs))
+    return {"jobs": jobs, "new_jobs": new_jobs, "total": len(jobs), "new": len(new_jobs)}
 
 
 @app.post("/triage")
@@ -81,7 +85,7 @@ def triage():
 
         db.upsert_job(url, job["title"], job["company"], job["platform"], score)
         db.update_status(url, "queued")
-        triaged.append({**job, "score": score})
+        triaged.append({**job, "score": score, "trello_card_id": db_job["trello_card_id"]})
 
     logger.info("Triagem concluiu com %d vagas aprovadas", len(triaged))
     return {"jobs": triaged, "total": len(triaged)}
@@ -115,6 +119,18 @@ def apply(req: ApplyRequest):
     else:
         db.update_status(req.url, "queued", notes=result)
         return {"result": "ERROR", "detail": result}
+
+
+class CardIdUpdate(BaseModel):
+    url: str
+    trello_card_id: str
+
+
+@app.post("/card-id")
+def set_card_id(req: CardIdUpdate):
+    """N8n salva o ID do card Trello após criar na lista Coletada."""
+    db.update_trello_card_id(req.url, req.trello_card_id)
+    return {"ok": True}
 
 
 @app.post("/status")

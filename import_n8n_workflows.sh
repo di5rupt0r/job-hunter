@@ -9,14 +9,14 @@ WORKFLOWS_DIR="$HOME/job-hunter/n8n-workflows"
 echo "=== Importando workflows no n8n ==="
 
 for f in "$WORKFLOWS_DIR"/*.json; do
-  WFLOW_NAME=$(python3 -c "import json; print(json.load(open('$f'))'name')")
+  WFLOW_NAME=$(python3 -c "import json; print(json.load(open('$f'))['name'])")
   echo -n "  Importando: $WFLOW_NAME ... "
 
   # Strip read-only fields before POST
   BODY=$(python3 -c "
 import json, sys
 d = json.load(open(sys.argv[1]))
-for k in [active, id, tags, createdAt, updatedAt, versionId]:
+for k in ['active', 'id', 'tags', 'createdAt', 'updatedAt', 'versionId']:
     d.pop(k, None)
 print(json.dumps(d))
 " "$f")
@@ -26,7 +26,7 @@ print(json.dumps(d))
     -H "Content-Type: application/json" \
     -d "$BODY")
 
-  WF_ID=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(id,ERROR))" 2>/dev/null)
+  WF_ID=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id','ERROR'))" 2>/dev/null)
 
   if [ "$WF_ID" = "ERROR" ] || [ -z "$WF_ID" ]; then
     echo "FALHOU. Resposta: $RESULT"
