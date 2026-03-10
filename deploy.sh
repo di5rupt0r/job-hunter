@@ -18,6 +18,12 @@ log()  { echo "[deploy] $*"; }
 ok()   { echo "[deploy] ✓ $*"; }
 fail() { echo "[deploy] ✗ $*" >&2; exit 1; }
 
+# ── Pré-requisito: .env deve existir ──────────────────────────────────────────
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+  fail ".env não encontrado em $SCRIPT_DIR/.env — copie .env.example e preencha as credenciais:
+    cp $SCRIPT_DIR/.env.example $SCRIPT_DIR/.env"
+fi
+
 # ── 1. Dependências Python ────────────────────────────────────────────────────
 log "Atualizando dependências Python..."
 if [ ! -f "$VENV_DIR/bin/pip" ]; then

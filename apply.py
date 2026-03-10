@@ -15,12 +15,14 @@ MAX_ACTIONS_PER_STEP = 10
 MAX_STEPS = 30
 MAX_PROFILE_CHARS = 3000
 
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    base_url="https://models.inference.ai.azure.com",
-    api_key=os.environ["GITHUB_TOKEN"],
-    temperature=0.2,
-)
+
+def _get_llm():
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        base_url="https://models.inference.ai.azure.com",
+        api_key=os.environ["GITHUB_TOKEN"],
+        temperature=0.2,
+    )
 
 # Importa perfil do Basic Memory via collect.py
 from collect import load_profile_and_policy
@@ -71,7 +73,7 @@ async def run_agent(url: str, title: str, company: str) -> str:
     browser = Browser(config=browser_config)
     agent = Agent(
         task=build_task(url, title, company),
-        llm=llm,
+        llm=_get_llm(),
         browser=browser,
         max_actions_per_step=MAX_ACTIONS_PER_STEP,
     )
